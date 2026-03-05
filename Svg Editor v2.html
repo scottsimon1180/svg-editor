@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>SVG Editor Pro</title>
+  <style>
+    :root {
+      --ios-bg: #e6e6e8;
+      --ios-text: #1c1c1e;
+      --ios-sub: #8e8e93;
+      --ios-sep: rgba(60,60,67,.18);
+      --ios-card: #ffffff;
+      --ios-shadow: 0 20px 60px rgba(0,0,0,.22);
+      --ios-blue: #007aff;
+      --ios-btn: rgba(120,120,128,.18);
+      --ios-btn-press: rgba(120,120,128,.30);
+      --radius-lg: 20px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ios-bg: #000000;
+        --ios-text: #e6e6e8;
+        --ios-sub: #8e8e93;
+        --ios-sep: rgba(84,84,88,.55);
+        --ios-card: #1c1c1e;
+        --ios-shadow: 0 26px 80px rgba(0,0,0,.55);
+        --ios-btn: rgba(120,120,128,.24);
+        --ios-btn-press: rgba(120,120,128,.36);
+      }
+      .panel, .preview-row, .modal-card { background: #0b0b0c !important; border: 1px solid #1f1f22 !important; }
+      .modal-title { color: #f2f2f7 !important; }
+      .btn-alt { background: #2c2c2e !important; color: #fff !important; }
+      textarea, input[type="number"], input[type="range"] {
+          background-color: #1c1c1e !important; color: #ffffff !important; border-color: #3a3a3c !important;
+      }
+      .layer-card { border-bottom-color: #3a3a3c !important; }
+      .modal-close-btn { background: #3a3a3c !important; }
+      .modal-close-icon { fill: #ebebf5 !important; }
+    }
+
+    html, body {
+      height: 100%; width: 100%; overflow: hidden; position: fixed;
+      touch-action: none; -webkit-user-select: none; user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      padding: env(safe-area-inset-top, 20px) 16px env(safe-area-inset-bottom, 20px) 16px;
+      margin: 0; background-color: var(--ios-bg); color: var(--ios-text); box-sizing: border-box;
+    }
+
+    textarea, input, button { -webkit-user-select: text; user-select: auto; }
+    .hidden { display: none !important; }
+
+    /* Top Preview Area */
+    .preview-row {
+      width: 100%; height: 200px; position: relative; margin-bottom: 12px; margin-top: 12px;
+      background: rgba(255,255,255,.55); border-radius: 16px;
+      border: 1px solid rgba(0,0,0,.06); backdrop-filter: blur(10px); flex-shrink: 0;
+      overflow: hidden; display: flex; align-items: center; justify-content: center;
+    }
+
+    #preview-container {
+      width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    }
+    #preview-container svg { max-width: 90%; max-height: 90%; }
+
+    /* Editor Architecture */
+    .editor-body {
+      width: 100%; flex: 1; display: flex; flex-direction: column;
+      min-height: 0;
+    }
+
+    /* Scrollable Layers Panel */
+    .panel {
+      width: 100%; background: rgba(255,255,255,.55); border: 1px solid rgba(0,0,0,.06);
+      border-radius: 16px; box-sizing: border-box; backdrop-filter: blur(10px);
+      display: flex; flex-direction: column; flex: 1; overflow: hidden;
+    }
+
+    .scroll-list {
+      flex: 1; overflow-y: auto; padding: 0; margin: 0;
+      touch-action: pan-y; -webkit-overflow-scrolling: touch;
+    }
+
+    /* Distributed Layer Cards */
+    .layer-card {
+      padding: 16px 14px; border-bottom: 1px solid var(--ios-sep);
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .layer-card:last-child { border-bottom: none; }
+
+    .layer-header {
+      font-size: 16px; font-weight: 700; color: var(--ios-text);
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .layer-id { font-size: 13px; font-weight: 500; color: var(--ios-sub); }
+
+    /* Property Rows */
+    .prop-row {
+      display: flex; align-items: center; width: 100%; gap: 10px;
+    }
+    .prop-label {
+      font-size: 14px; font-weight: 600; width: 48px; flex-shrink: 0; color: var(--ios-sub);
+    }
+
+    /* iOS Native Styled Toggle */
+    .ios-toggle {
+      -webkit-appearance: none; appearance: none; width: 46px; height: 26px;
+      background: var(--ios-sep); border-radius: 13px; position: relative; outline: none;
+      transition: 0.3s; flex-shrink: 0; margin: 0;
+    }
+    .ios-toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
+      background: #fff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transition: 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .ios-toggle:checked { background: #34c759; }
+    .ios-toggle:checked::after { transform: translateX(20px); }
+
+    /* Inputs */
+    input[type="color"] {
+      width: 36px; height: 36px; border: none; border-radius: 8px;
+      padding: 0; background: none; flex-shrink: 0; margin: 0;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: 1px solid var(--ios-sep); border-radius: 8px; }
+
+    input[type="range"] {
+      flex: 1; min-width: 0; -webkit-appearance: none; height: 4px;
+      border-radius: 2px; background: var(--ios-sep); margin: 0; touch-action: pan-x;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 24px; height: 24px; background: #fff;
+      border-radius: 50%; box-shadow: 0 1px 5px rgba(0,0,0,0.3); margin-top: -10px;
+    }
+
+    input[type="number"] {
+      flex: 1; min-width: 0; max-width: 80px; padding: 8px; border-radius: 8px;
+      border: 1px solid var(--ios-sep); text-align: center; font-size: 15px;
+      background: var(--ios-card); color: var(--ios-text); margin: 0;
+    }
+
+    .val-display {
+      width: 34px; text-align: right; font-size: 14px; font-weight: 500;
+      color: var(--ios-text); font-variant-numeric: tabular-nums; flex-shrink: 0;
+    }
+
+    /* Footer Buttons & Icons */
+    .footer {
+      width: 100%; margin-top: 12px; flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    .btn-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .btn-primary, .btn-secondary {
+      width: 100%; border: none; border-radius: 14px; padding: 16px;
+      font-weight: 800; font-size: 18px; -webkit-appearance: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+
+    .btn-primary { background: var(--ios-blue); color: #fff; }
+    .btn-primary:active { transform: scale(.98); }
+
+    .btn-secondary { background: var(--ios-btn); color: var(--ios-text); box-shadow: 0 0.5px 0 rgba(0,0,0,.08) inset; }
+    .btn-secondary:active { transform: scale(.98); background: var(--ios-btn-press); }
+
+    /* Custom Gradient Implementation for Optimized Export Button */
+    #btn-export-optimized {
+      background: linear-gradient(135deg, #C00405, #9A0405);
+      color: #ffffff;
+      box-shadow: none;
+    }
+    #btn-export-optimized:active {
+      transform: scale(.98);
+      background: linear-gradient(135deg, #C00405, #9A0405);
+      opacity: 0.9;
+    }
+
+    /* side-by-side export and import rows */
+    .export-row, .import-row { display: flex; gap: 10px; width: 100%; }
+    .export-row button, .import-row button { flex: 1; width: auto; }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000;
+      display: none; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;
+      backdrop-filter: blur(4px);
+    }
+    .modal-backdrop.show { display: flex; }
+
+    .modal-card {
+      width: 100%; max-width: 520px; background: var(--ios-card); border-radius: 24px;
+      padding: 24px 20px 20px 20px; box-sizing: border-box; box-shadow: var(--ios-shadow);
+      display: flex; flex-direction: column; gap: 18px; position: relative;
+    }
+    
+    .modal-title { 
+      font-weight: 700; font-size: 18px; text-align: center; color: var(--ios-text); margin: 0; 
+      letter-spacing: -0.4px;
+    }
+
+    .modal-close-btn {
+      position: absolute; top: 16px; right: 16px; width: 30px; height: 30px;
+      background: #e5e5ea; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; border: none; padding: 0; outline: none; transition: transform 0.1s;
+    }
+    .modal-close-btn:active { transform: scale(0.9); }
+    .modal-close-icon { fill: #1c1c1e; width: 12px; height: 12px; }
+
+    textarea.code-area {
+      width: 100%; height: 260px; border-radius: 12px; border: 1px solid var(--ios-sep);
+      padding: 14px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;
+      background: var(--ios-card); color: var(--ios-text); resize: none; box-sizing: border-box;
+      touch-action: pan-y; -webkit-overflow-scrolling: touch; line-height: 1.4;
+    }
+
+    .modal-btn-row { display: flex; gap: 12px; }
+    .btn-alt { flex: 1; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 16px; background: var(--ios-btn); color: var(--ios-text); display: flex; align-items: center; justify-content: center; gap: 8px;}
+    .btn-alt:active { transform: scale(.98); background: var(--ios-btn-press); }
+    .btn-modal-primary { flex: 1; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 16px; background: var(--ios-blue); color: #fff; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;}
+    .btn-modal-primary:active { transform: scale(.98); }
+
+  </style>
+</head>
+<body>
+
+  <div class="preview-row">
+    <div id="preview-container">
+      <div style="color: var(--ios-sub); font-weight: 600; font-size: 14px;">No Vector Data Loaded</div>
+    </div>
+  </div>
+
+  <div class="editor-body">
+    <div class="panel">
+      <div id="layers-container" class="scroll-list allow-scroll">
+        <textarea id="svg-input" class="code-area allow-scroll" placeholder="Paste raw <svg>...</svg> syntax here." style="height: 100%; width: 100%; border: none; border-radius: 0; background: transparent; padding: 16px; outline: none;"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="import-row">
+      <button class="btn-secondary" id="btn-open-import">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="-1 0.08594000339508057 18.773399353027344 26.203160643577576"><g><path d="M16.7734 6.79688L16.7734 22.25C16.7734 24.2734 15.7656 25.2891 13.7656 25.2891L3.00781 25.2891C1.00781 25.2891 0 24.2734 0 22.25L0 6.79688C0 4.77344 1.00781 3.75 3.00781 3.75L3.3393 3.75C3.33173 3.82378 3.32812 3.89944 3.32812 3.97656L3.32812 5.02344C3.32812 6.19531 4.14844 7.02344 5.29688 7.02344L11.4766 7.02344C12.625 7.02344 13.4453 6.19531 13.4453 5.02344L13.4453 3.97656C13.4453 3.89944 13.4417 3.82378 13.4341 3.75L13.7656 3.75C15.7656 3.75 16.7734 4.77344 16.7734 6.79688Z" fill="currentColor" stroke="none"/><path d="M5.29688 5.92969L11.4766 5.92969C12.0234 5.92969 12.3594 5.59375 12.3594 5.02344L12.3594 3.97656C12.3594 3.40625 12.0234 3.07031 11.4766 3.07031L10.4688 3.07031C10.4141 1.97656 9.5 1.08594 8.39062 1.08594C7.27344 1.08594 6.35938 1.97656 6.30469 3.07031L5.29688 3.07031C4.75 3.07031 4.41406 3.40625 4.41406 3.97656L4.41406 5.02344C4.41406 5.59375 4.75 5.92969 5.29688 5.92969ZM8.39062 4.02344C7.89062 4.02344 7.49219 3.60938 7.49219 3.13281C7.49219 2.63281 7.89062 2.23438 8.39062 2.23438C8.88281 2.23438 9.28125 2.63281 9.28125 3.13281C9.28125 3.60938 8.88281 4.02344 8.39062 4.02344Z" fill="currentColor" stroke="none"/></g></svg>
+        <span class="btn-text">Paste Text</span>
+      </button>
+      
+      <button class="btn-secondary" id="btn-upload-file">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" id="Layer_2" viewBox="1.5999999046325684 0.5099999904632568 20.78999948501587 22.979999780654907"><path d="M19.69,18.06c-.05,1.75-1.07,2.74-2.87,2.74H7.16c-1.79,0-2.81-.99-2.86-2.74h-1.44c.05,2.68,1.57,4.18,4.3,4.18h9.66c2.73,0,4.25-1.5,4.3-4.18h-1.43Z" stroke="currentColor" stroke-miterlimit="10" stroke-width="0.5" fill="currentColor"/><path d="M12,1.76c-.39,0-.71.32-.71.69v10.84l.11,2.58c.02.33.27.61.61.61s.58-.27.6-.61l.11-2.58V2.45c0-.38-.32-.69-.7-.69ZM7.17,10.82c-.37,0-.65.27-.65.63,0,.19.08.33.22.47l4.74,4.65c.18.17.33.23.52.23s.33-.06.51-.23l4.75-4.66c.14-.14.21-.27.21-.47,0-.36-.28-.63-.65-.63-.17,0-.36.07-.48.22l-3.06,3.14-1.28,1.37-1.3-1.37-3.04-3.12c-.13-.15-.32-.22-.49-.22Z" stroke="currentColor" stroke-miterlimit="10" stroke-width=".5" fill="currentColor"/><path d="M3.57,18.93c-.4,0-.72-.32-.72-.72v-2.93c0-.4.32-.72.72-.72s.72.32.72.72v2.93c0,.4-.32.72-.72.72Z" stroke="currentColor" stroke-miterlimit="10" stroke-width=".5" fill="currentColor"/><path d="M20.43,19.13c-.39,0-.71-.32-.71-.71v-2.93c0-.39.32-.71.71-.71s.71.32.71.71v2.93c0,.39-.32.71-.71.71Z" stroke="currentColor" stroke-miterlimit="10" stroke-width=".5" fill="currentColor"/></svg>
+        <span>Import SVG</span>
+      </button>
+    </div>
+
+    <div class="export-row">
+      <button class="btn-primary" id="btn-export-regular">Export Regular</button>
+      <button class="btn-secondary" id="btn-export-optimized">Export HTML optimised</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="export-modal">
+    <div class="modal-card">
+      <button class="modal-close-btn" id="btn-close-export" aria-label="Close">
+        <svg class="modal-close-icon" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+          <path d="M13.636 1.77L8.406 7l5.23 5.23-.706.706L7.7 7.707l-5.23 5.23-.707-.706L7.001 7 1.77 1.77l.707-.707L7.708 6.29 12.93.363l.707.707z" />
+        </svg>
+      </button>
+      <div class="modal-title" id="export-modal-title">Export Vector Data</div>
+      <textarea id="export-textarea" class="code-area allow-scroll" readonly></textarea>
+      <div class="modal-btn-row">
+        <button class="btn-alt" id="btn-save-file">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="-1 0.6093800067901611 19.671899795532227 24.343719720840454"><g><path d="M6.39062 9.30469L4.15625 9.30469C2.38281 9.30469 1.38281 10.2969 1.38281 12.0703L1.38281 19.7891C1.38281 21.5703 2.38281 22.5703 4.15625 22.5703L13.5078 22.5703C15.2891 22.5703 16.2891 21.5703 16.2891 19.7891L16.2891 12.0703C16.2891 10.2969 15.2891 9.30469 13.5078 9.30469L11.2812 9.30469L11.2812 7.91406L13.5078 7.91406C16.1875 7.91406 17.6719 9.40625 17.6719 12.0781L17.6719 19.7891C17.6719 22.4609 16.1875 23.9531 13.5078 23.9531L4.16406 23.9531C1.48438 23.9531 0 22.4609 0 19.7891L0 12.0781C0 9.40625 1.48438 7.91406 4.16406 7.91406L6.39062 7.91406Z" fill="currentColor" stroke="none"/><path d="M9.46254 3.49778L9.52344 4.99219L9.52344 15.4766C9.52344 15.8438 9.20312 16.1484 8.83594 16.1484C8.46875 16.1484 8.14844 15.8438 8.14844 15.4766L8.14844 4.99219L8.20934 3.49778L8.83594 2.83594Z" fill="currentColor" stroke="none"/><path d="M5.40625 6.14844C5.57031 6.14844 5.75781 6.07812 5.88281 5.9375L7.58594 4.15625L8.83594 2.83594L10.0859 4.15625L11.7812 5.9375C11.9062 6.07812 12.0859 6.14844 12.25 6.14844C12.6094 6.14844 12.8828 5.89062 12.8828 5.53906C12.8828 5.35938 12.8047 5.21875 12.6797 5.08594L9.33594 1.83594C9.16406 1.66406 9.00781 1.60938 8.83594 1.60938C8.66406 1.60938 8.50781 1.66406 8.33594 1.83594L4.99219 5.08594C4.85938 5.21875 4.78906 5.35938 4.78906 5.53906C4.78906 5.89062 5.04688 6.14844 5.40625 6.14844Z" fill="currentColor" stroke="none"/></g></svg>
+          <span>Save</span>
+        </button>
+        <button class="btn-modal-primary" id="btn-copy-clipboard">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-upload-input" accept=".svg" class="hidden">
+
+  <script>
+    const preventTouchMove = (e) => {
+      if (!e.target.closest('.allow-scroll')) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('touchmove', preventTouchMove, { passive: false });
+
+    // Embedded Vector Assets for State Switching
+    const ICONS = {
+      paste: `<svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="-1 0.08594000339508057 18.773399353027344 26.203160643577576"><g><path d="M16.7734 6.79688L16.7734 22.25C16.7734 24.2734 15.7656 25.2891 13.7656 25.2891L3.00781 25.2891C1.00781 25.2891 0 24.2734 0 22.25L0 6.79688C0 4.77344 1.00781 3.75 3.00781 3.75L3.3393 3.75C3.33173 3.82378 3.32812 3.89944 3.32812 3.97656L3.32812 5.02344C3.32812 6.19531 4.14844 7.02344 5.29688 7.02344L11.4766 7.02344C12.625 7.02344 13.4453 6.19531 13.4453 5.02344L13.4453 3.97656C13.4453 3.89944 13.4417 3.82378 13.4341 3.75L13.7656 3.75C15.7656 3.75 16.7734 4.77344 16.7734 6.79688Z" fill="currentColor" stroke="none"/><path d="M5.29688 5.92969L11.4766 5.92969C12.0234 5.92969 12.3594 5.59375 12.3594 5.02344L12.3594 3.97656C12.3594 3.40625 12.0234 3.07031 11.4766 3.07031L10.4688 3.07031C10.4141 1.97656 9.5 1.08594 8.39062 1.08594C7.27344 1.08594 6.35938 1.97656 6.30469 3.07031L5.29688 3.07031C4.75 3.07031 4.41406 3.40625 4.41406 3.97656L4.41406 5.02344C4.41406 5.59375 4.75 5.92969 5.29688 5.92969ZM8.39062 4.02344C7.89062 4.02344 7.49219 3.60938 7.49219 3.13281C7.49219 2.63281 7.89062 2.23438 8.39062 2.23438C8.88281 2.23438 9.28125 2.63281 9.28125 3.13281C9.28125 3.60938 8.88281 4.02344 8.39062 4.02344Z" fill="currentColor" stroke="none"/></g></svg>`,
+      clear: `<svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -0.9765625 23.539100646972656 20.35936164855957"><g><path d="M18.4922 18.3828C20.5078 18.3828 21.5391 17.375 21.5391 15.375L21.5391 3.03125C21.5391 1.03125 20.5078 0.0234375 18.4922 0.0234375L9.82031 0.0234375C8.66406 0.0234375 7.71094 0.296875 6.91406 1.13281L0.90625 7.33594C0.273438 7.98438 0 8.5625 0 9.17969C0 9.79688 0.265625 10.3828 0.90625 11.0312L6.92188 17.1641C7.71875 17.9922 8.67188 18.375 9.82812 18.375ZM18.4688 17L9.80469 17C9.02344 17 8.5 16.7812 7.95312 16.2188L1.97656 10.1172C1.61719 9.74219 1.5 9.47656 1.5 9.17969C1.5 8.88281 1.625 8.61719 1.97656 8.25L7.94531 2.08594C8.48438 1.52344 9.02344 1.40625 9.79688 1.40625L18.4688 1.40625C19.5547 1.40625 20.1484 1.98438 20.1484 3.10156L20.1484 15.3047C20.1484 16.4219 19.5547 17 18.4688 17Z" fill="currentColor" stroke="none"/><path d="M9.61719 13.1797L16.5703 6.21094C16.7109 6.07812 16.7891 5.91406 16.7891 5.71875C16.7891 5.33594 16.4766 5.03906 16.0859 5.03906C15.8984 5.03906 15.7344 5.10156 15.6016 5.25L8.625 12.1953C8.48438 12.3359 8.40625 12.5 8.40625 12.6953C8.40625 13.0781 8.71875 13.3984 9.10938 13.3984C9.3125 13.3984 9.47656 13.3125 9.61719 13.1797ZM15.5859 13.1797C15.7188 13.3125 15.8828 13.3984 16.0859 13.3984C16.4766 13.3984 16.7891 13.0781 16.7891 12.6953C16.7891 12.5 16.7109 12.3359 16.5703 12.1953L9.60156 5.25C9.46094 5.10156 9.30469 5.03906 9.10938 5.03906C8.71875 5.03906 8.40625 5.33594 8.40625 5.71875C8.40625 5.91406 8.48438 6.07812 8.625 6.21094Z" fill="currentColor" stroke="none"/></g></svg>`
+    };
+
+    let currentSvgNode = null;
+    let isSvgLoaded = false;
+
+    const DOM = {
+      previewContainer: document.getElementById('preview-container'),
+      layersContainer: document.getElementById('layers-container'),
+
+      btnOpenImport: document.getElementById('btn-open-import'),
+      
+      btnUploadFile: document.getElementById('btn-upload-file'),
+      fileUploadInput: document.getElementById('file-upload-input'),
+
+      exportModal: document.getElementById('export-modal'),
+      exportModalTitle: document.getElementById('export-modal-title'),
+      exportTextarea: document.getElementById('export-textarea'),
+      btnExportRegular: document.getElementById('btn-export-regular'),
+      btnExportOptimized: document.getElementById('btn-export-optimized'),
+      btnCloseExport: document.getElementById('btn-close-export'),
+      btnSaveFile: document.getElementById('btn-save-file'),
+      btnCopyClipboard: document.getElementById('btn-copy-clipboard')
+    };
+
+    const openModal = (modal) => modal.classList.add('show');
+    const closeModal = (modal) => modal.classList.remove('show');
+
+    // Load/Reset Protocol Toggle
+    DOM.btnOpenImport.addEventListener('click', () => {
+      if (!isSvgLoaded) {
+        // Load State
+        const svgInput = document.getElementById('svg-input');
+        if (svgInput && svgInput.value.trim()) {
+          processRawSvg(svgInput.value.trim());
+        } else {
+          alert('Please paste SVG code into the text area prior to execution.');
+        }
+      } else {
+        // Reset State
+        currentSvgNode = null;
+        isSvgLoaded = false;
+        
+        DOM.previewContainer.innerHTML = '<div style="color: var(--ios-sub); font-weight: 600; font-size: 14px;">No Vector Data Loaded</div>';
+        DOM.layersContainer.innerHTML = '<textarea id="svg-input" class="code-area allow-scroll" placeholder="Paste raw <svg>...</svg> syntax here." style="height: 100%; width: 100%; border: none; border-radius: 0; background: transparent; padding: 16px; outline: none;"></textarea>';
+        
+        DOM.btnOpenImport.innerHTML = `${ICONS.paste} <span class="btn-text">Paste Text</span>`;
+        DOM.fileUploadInput.value = '';
+      }
+    });
+
+    // Abstract Syntax Tree Initialization Subroutine
+    function processRawSvg(rawSvg) {
+      if (!rawSvg) return;
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawSvg, 'image/svg+xml');
+      const svgNode = doc.querySelector('svg');
+
+      if (!svgNode) {
+        alert('Invalid XML Tree. Verification of <svg> root tag failed.');
+        return;
+      }
+
+      DOM.previewContainer.innerHTML = '';
+      DOM.previewContainer.appendChild(svgNode);
+      currentSvgNode = svgNode;
+      
+      isSvgLoaded = true;
+      DOM.btnOpenImport.innerHTML = `${ICONS.clear} <span class="btn-text">Clear Text</span>`;
+
+      buildComponentArchitecture();
+    }
+
+    // Native File Protocol Execution
+    DOM.btnUploadFile.addEventListener('click', () => {
+      DOM.fileUploadInput.click();
+    });
+
+    DOM.fileUploadInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        processRawSvg(event.target.result.trim());
+        DOM.fileUploadInput.value = ''; // Reset input to allow reloading the identical file if desired
+      };
+      reader.readAsText(file);
+    });
+
+    // Component Orchestration
+    function buildComponentArchitecture() {
+      DOM.layersContainer.innerHTML = '';
+      if (!currentSvgNode) return;
+
+      const elements = Array.from(currentSvgNode.querySelectorAll('path, rect, circle, ellipse, line, polygon, polyline'));
+
+      if (elements.length === 0) {
+        DOM.layersContainer.innerHTML = '<div style="color: var(--ios-sub); text-align: center; padding-top: 30px; font-weight: 500;">No editable geometries detected.</div>';
+        return;
+      }
+
+      elements.forEach((svgElement, index) => {
+        const type = svgElement.tagName.toLowerCase();
+        const displayType = type.charAt(0).toUpperCase() + type.slice(1);
+        const idText = svgElement.id ? `<span class="layer-id">#${svgElement.id}</span>` : '';
+
+        // Internal State Interrogation
+        let initialFill = svgElement.getAttribute('fill');
+        if (!initialFill && type !== 'line' && type !== 'polyline') initialFill = '#000000'; // Default SVG fill
+
+        let initialFillOpacity = svgElement.getAttribute('opacity') || svgElement.getAttribute('fill-opacity') || '1';
+        let fillEnabled = !(initialFill === 'none' || initialFill === 'transparent' || !initialFill);
+        let parsedFillColor = fillEnabled && initialFill.startsWith('#') ? initialFill.substring(0,7) : '#000000';
+
+        let initialStroke = svgElement.getAttribute('stroke') || 'none';
+        let initialStrokeWidth = svgElement.getAttribute('stroke-width') || '1';
+        let strokeEnabled = !(initialStroke === 'none' || initialStroke === 'transparent');
+        let parsedStrokeColor = strokeEnabled && initialStroke.startsWith('#') ? initialStroke.substring(0,7) : '#000000';
+
+        const card = document.createElement('div');
+        card.className = 'layer-card';
+        card.innerHTML = `
+          <div class="layer-header">${displayType} ${index + 1} ${idText}</div>
+
+          <div class="prop-row">
+            <span class="prop-label">Fill</span>
+            <input type="checkbox" class="ios-toggle fill-toggle" ${fillEnabled ? 'checked' : ''}>
+            <input type="color" class="fill-color" value="${parsedFillColor}">
+            <input type="range" class="fill-opacity" min="0" max="1" step="0.05" value="${initialFillOpacity}">
+            <span class="val-display fill-opacity-val">${parseFloat(initialFillOpacity).toFixed(2)}</span>
+          </div>
+
+          <div class="prop-row">
+            <span class="prop-label">Stroke</span>
+            <input type="checkbox" class="ios-toggle stroke-toggle" ${strokeEnabled ? 'checked' : ''}>
+            <input type="color" class="stroke-color" value="${parsedStrokeColor}">
+            <input type="number" class="stroke-width" min="0" step="0.5" value="${parseFloat(initialStrokeWidth)}" placeholder="W">
+          </div>
+        `;
+
+        DOM.layersContainer.appendChild(card);
+
+        const fillToggle = card.querySelector('.fill-toggle');
+        const fillColor = card.querySelector('.fill-color');
+        const fillOpacity = card.querySelector('.fill-opacity');
+        const fillOpacityVal = card.querySelector('.fill-opacity-val');
+
+        const strokeToggle = card.querySelector('.stroke-toggle');
+        const strokeColor = card.querySelector('.stroke-color');
+        const strokeWidth = card.querySelector('.stroke-width');
+
+        if (!fillEnabled) { fillColor.style.opacity = '0.3'; fillOpacity.style.opacity = '0.3'; }
+        if (!strokeEnabled) { strokeColor.style.opacity = '0.3'; strokeWidth.style.opacity = '0.3'; }
+
+        const updateNodeProperties = () => {
+          if (fillToggle.checked) {
+            fillColor.style.opacity = '1';
+            fillOpacity.style.opacity = '1';
+            svgElement.setAttribute('fill', fillColor.value);
+            svgElement.setAttribute('fill-opacity', fillOpacity.value);
+            fillOpacityVal.textContent = parseFloat(fillOpacity.value).toFixed(2);
+          } else {
+            fillColor.style.opacity = '0.3';
+            fillOpacity.style.opacity = '0.3';
+            svgElement.setAttribute('fill', 'none');
+          }
+
+          if (strokeToggle.checked) {
+            strokeColor.style.opacity = '1';
+            strokeWidth.style.opacity = '1';
+            svgElement.setAttribute('stroke', strokeColor.value);
+            svgElement.setAttribute('stroke-width', strokeWidth.value);
+          } else {
+            strokeColor.style.opacity = '0.3';
+            strokeWidth.style.opacity = '0.3';
+            svgElement.setAttribute('stroke', 'none');
+          }
+        };
+
+        const internalInputs = [fillToggle, fillColor, fillOpacity, strokeToggle, strokeColor, strokeWidth];
+        internalInputs.forEach(input => input.addEventListener('input', updateNodeProperties));
+      });
+    }
+
+    // -------------------------------
+    // Export Helpers
+    // -------------------------------
+
+    function removeComments(node) {
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_COMMENT, null);
+      const toRemove = [];
+      while (walker.nextNode()) toRemove.push(walker.currentNode);
+      toRemove.forEach(n => n.parentNode && n.parentNode.removeChild(n));
+    }
+
+    function removeEmptyGroups(node) {
+      const groups = Array.from(node.querySelectorAll('g'));
+      groups.reverse().forEach(g => {
+        const hasElementChild = Array.from(g.childNodes).some(n => n.nodeType === 1); 
+        if (!hasElementChild) g.remove();
+      });
+    }
+
+    function stripRedundantOpacityAttrs(node) {
+      const all = Array.from(node.querySelectorAll('*'));
+      all.forEach(el => {
+        const pairs = ['opacity', 'fill-opacity', 'stroke-opacity'];
+        pairs.forEach(attr => {
+          if (!el.hasAttribute(attr)) return;
+          const v = (el.getAttribute(attr) || '').trim();
+          if (v === '1' || v === '1.0' || v === '1.00') el.removeAttribute(attr);
+        });
+      });
+    }
+
+    function ensureXmlns(svgEl) {
+      if (!svgEl.getAttribute('xmlns')) {
+        svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      }
+    }
+
+    function pruneInvisibleGeometries(exportNode) {
+      const exportGeometries = Array.from(exportNode.querySelectorAll('path, rect, circle, ellipse, line, polygon, polyline'));
+      exportGeometries.forEach(el => {
+        const fill = el.getAttribute('fill') || 'black';
+        const stroke = el.getAttribute('stroke') || 'none';
+        if ((fill === 'none' || fill === 'transparent') && (stroke === 'none' || stroke === 'transparent')) {
+          el.remove();
+        }
+      });
+    }
+
+    function computeTightViewBoxFromLiveNode(liveSvgNode, exportNode) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let hasValidBounds = false;
+
+      const geometries = Array.from(liveSvgNode.querySelectorAll('path, rect, circle, ellipse, line, polygon, polyline'));
+
+      geometries.forEach(el => {
+        const fill = el.getAttribute('fill') || 'black';
+        const stroke = el.getAttribute('stroke') || 'none';
+
+        const isInvisible = (fill === 'none' || fill === 'transparent') &&
+                            (stroke === 'none' || stroke === 'transparent');
+        if (isInvisible) return;
+
+        try {
+          const bbox = el.getBBox();
+          if (bbox.width === 0 && bbox.height === 0) return;
+
+          const strokeWidth = parseFloat(el.getAttribute('stroke-width')) || 0;
+          const offset = (stroke !== 'none' && stroke !== 'transparent') ? (strokeWidth / 2) : 0;
+
+          minX = Math.min(minX, bbox.x - offset);
+          minY = Math.min(minY, bbox.y - offset);
+          maxX = Math.max(maxX, bbox.x + bbox.width + offset);
+          maxY = Math.max(maxY, bbox.y + bbox.height + offset);
+          hasValidBounds = true;
+        } catch (e) {
+          // ignore
+        }
+      });
+
+      if (hasValidBounds) {
+        const padding = 1; 
+        const finalX = minX - padding;
+        const finalY = minY - padding;
+        const finalW = (maxX - minX) + (padding * 2);
+        const finalH = (maxY - minY) + (padding * 2);
+
+        exportNode.setAttribute('viewBox', `${finalX} ${finalY} ${finalW} ${finalH}`);
+        return true;
+      }
+      return false;
+    }
+
+    function minifySvgString(svgString) {
+      return svgString
+        .replace(/>\s+</g, '><')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    }
+
+    function generateExportPayload({ optimized }) {
+      if (!currentSvgNode) return null;
+
+      const exportNode = currentSvgNode.cloneNode(true);
+      pruneInvisibleGeometries(exportNode);
+      computeTightViewBoxFromLiveNode(currentSvgNode, exportNode);
+      ensureXmlns(exportNode);
+
+      if (!optimized) {
+        exportNode.setAttribute('width', '100%');
+        exportNode.setAttribute('height', '100%');
+
+        const serializer = new XMLSerializer();
+        let payload = serializer.serializeToString(exportNode);
+
+        if (!payload.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+          payload = payload.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+        }
+        return payload;
+      }
+
+      exportNode.removeAttribute('width');
+      exportNode.removeAttribute('height');
+      exportNode.removeAttribute('x');
+      exportNode.removeAttribute('y');
+
+      removeComments(exportNode);
+      removeEmptyGroups(exportNode);
+      stripRedundantOpacityAttrs(exportNode);
+
+      if (exportNode.getAttribute('version')) exportNode.removeAttribute('version');
+
+      const usesXlink = exportNode.querySelector('[*|href]') || exportNode.querySelector('[xlink\\:href]');
+      if (!usesXlink) {
+        exportNode.removeAttribute('xmlns:xlink');
+      }
+
+      const serializer = new XMLSerializer();
+      let payload = serializer.serializeToString(exportNode);
+
+      if (!payload.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+        payload = payload.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+
+      payload = minifySvgString(payload);
+      return payload;
+    }
+
+    function openExportModalWithPayload(payload, title) {
+      if (!payload) return;
+      DOM.exportModalTitle.textContent = title;
+      DOM.exportTextarea.value = payload;
+      openModal(DOM.exportModal);
+    }
+
+    // --- Export Button Wiring ---
+    DOM.btnExportRegular.addEventListener('click', () => {
+      if (!currentSvgNode) {
+        alert('DOM is empty. No vector data to export.');
+        return;
+      }
+      const payload = generateExportPayload({ optimized: false });
+      openExportModalWithPayload(payload, 'Export Regular');
+    });
+
+    DOM.btnExportOptimized.addEventListener('click', () => {
+      if (!currentSvgNode) {
+        alert('DOM is empty. No vector data to export.');
+        return;
+      }
+      const payload = generateExportPayload({ optimized: true });
+      openExportModalWithPayload(payload, 'Export HTML Optimised');
+    });
+
+    // Close Modal via Top Right 'X'
+    DOM.btnCloseExport.addEventListener('click', () => closeModal(DOM.exportModal));
+
+    // Hardware File Save Protocol
+    DOM.btnSaveFile.addEventListener('click', () => {
+      const svgData = DOM.exportTextarea.value;
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = DOM.exportModalTitle.textContent === 'Export HTML Optimised' ? 'optimized_graphic.svg' : 'regular_graphic.svg';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    });
+
+    // Hardware Clipboard Protocol
+    DOM.btnCopyClipboard.addEventListener('click', () => {
+      DOM.exportTextarea.select();
+      DOM.exportTextarea.setSelectionRange(0, 99999);
+
+      navigator.clipboard.writeText(DOM.exportTextarea.value).then(() => {
+        DOM.btnCopyClipboard.textContent = 'COPIED!';
+        DOM.btnCopyClipboard.style.background = '#34c759';
+        setTimeout(() => {
+          DOM.btnCopyClipboard.textContent = 'Copy';
+          DOM.btnCopyClipboard.style.background = '';
+        }, 2000);
+      }).catch(() => alert('Clipboard access denied by WebKit security constraints.'));
+    });
+  </script>
+</body>
+</html>
