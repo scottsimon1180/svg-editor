@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>SVG Rasterizer</title>
+    <style>
+        :root {
+            --ios-bg: #F2F2F7;
+            --ios-card: #FFFFFF;
+            --ios-blue: #007AFF;
+            --ios-text: #000000;
+            --ios-subtext: #8E8E93;
+            --ios-border: #C6C6C8;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--ios-bg);
+            color: var(--ios-text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom) 20px;
+        }
+
+        .header {
+            margin-top: 40px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            letter-spacing: 0.36px;
+        }
+
+        .header p {
+            font-size: 15px;
+            color: var(--ios-subtext);
+            margin: 0;
+        }
+
+        .card {
+            background-color: var(--ios-card);
+            width: 100%;
+            max-width: 400px;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            width: 100%;
+            height: 120px;
+            border: 2px dashed var(--ios-border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            background-color: #FAFAFA;
+            transition: border-color 0.2s ease;
+        }
+
+        .file-input-wrapper.active {
+            border-color: var(--ios-blue);
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .file-input-label {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--ios-blue);
+        }
+
+        .file-name-display {
+            font-size: 13px;
+            color: var(--ios-subtext);
+            margin-top: 8px;
+            max-width: 90%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        button {
+            background-color: var(--ios-blue);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            height: 50px;
+            font-size: 17px;
+            font-weight: 600;
+            width: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        button:active {
+            opacity: 0.7;
+        }
+
+        button:disabled {
+            background-color: var(--ios-border);
+            color: #FFFFFF;
+            cursor: not-allowed;
+        }
+
+        #preview-container {
+            display: none;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--ios-border);
+            background-image: repeating-conic-gradient(#f0f0f0 0% 25%, transparent 0% 50%);
+            background-size: 20px 20px;
+        }
+
+        #preview-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #status {
+            font-size: 13px;
+            text-align: center;
+            min-height: 16px;
+            color: var(--ios-subtext);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>SVG to PNG</h1>
+        <p>High-Fidelity Rasterization</p>
+    </div>
+
+    <div class="card">
+        <div class="file-input-wrapper" id="drop-zone">
+            <input type="file" id="svg-file" accept=".svg, image/svg+xml">
+            <div class="file-input-label">Tap to Select SVG</div>
+            <div class="file-name-display" id="file-name">No file selected</div>
+        </div>
+
+        <div id="preview-container">
+            <img id="preview-image" alt="SVG Preview">
+        </div>
+
+        <button id="convert-btn" disabled>Convert & Download PNG</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileInput = document.getElementById('svg-file');
+            const fileNameDisplay = document.getElementById('file-name');
+            const convertBtn = document.getElementById('convert-btn');
+            const previewContainer = document.getElementById('preview-container');
+            const previewImage = document.getElementById('preview-image');
+            const statusDisplay = document.getElementById('status');
+            const dropZone = document.getElementById('drop-zone');
+
+            let currentSvgUrl = null;
+            let currentFileName = '';
+
+            // Handle file selection
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                if (file.type !== 'image/svg+xml' && !file.name.toLowerCase().endsWith('.svg')) {
+                    updateStatus('Error: Invalid file format. Please select an SVG.', true);
+                    return;
+                }
+
+                currentFileName = file.name.replace(/\.[^/.]+$/, "");
+                fileNameDisplay.textContent = file.name;
+                
+                if (currentSvgUrl) URL.revokeObjectURL(currentSvgUrl);
+                currentSvgUrl = URL.createObjectURL(file);
+                
+                previewImage.src = currentSvgUrl;
+                previewContainer.style.display = 'block';
+                convertBtn.disabled = false;
+                
+                updateStatus('Ready for rasterization.');
+                dropZone.classList.add('active');
+            });
+
+            // Handle conversion protocol
+            convertBtn.addEventListener('click', () => {
+                if (!currentSvgUrl) return;
+
+                updateStatus('Processing vector data...');
+                convertBtn.disabled = true;
+
+                const img = new Image();
+                img.crossOrigin = 'Anonymous';
+                
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // SCALING FACTOR: Multiplied to ensure maximum raster quality.
+                    // SVGs are resolution-independent. Rendering at 4x scale yields high PPI.
+                    const scaleFactor = 4; 
+                    
+                    // Fallback dimensions if SVG lacks explicit width/height
+                    const width = img.width || 1024;
+                    const height = img.height || 1024;
+
+                    canvas.width = width * scaleFactor;
+                    canvas.height = height * scaleFactor;
+
+                    // Disable image smoothing for exact pixel mapping during scale
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+
+                    // Draw image onto canvas geometry
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    // Extract PNG payload
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            triggerDownload(blob, `${currentFileName}_high_res.png`);
+                            updateStatus('Rasterization complete. Initiating download.');
+                        } else {
+                            updateStatus('Error: Failed to generate binary payload.', true);
+                        }
+                        convertBtn.disabled = false;
+                    }, 'image/png');
+                };
+
+                img.onerror = () => {
+                    updateStatus('Error: Failed to parse SVG DOM node.', true);
+                    convertBtn.disabled = false;
+                };
+
+                img.src = currentSvgUrl;
+            });
+
+            function triggerDownload(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+            }
+
+            function updateStatus(message, isError = false) {
+                statusDisplay.textContent = message;
+                statusDisplay.style.color = isError ? '#FF3B30' : 'var(--ios-subtext)';
+            }
+        });
+    </script>
+</body>
+</html>
