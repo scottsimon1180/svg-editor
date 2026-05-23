@@ -42,6 +42,7 @@
       .layer-card { border-bottom-color: #3a3a3c !important; }
       .modal-close-btn { background: #3a3a3c !important; }
       .modal-close-icon { fill: #ebebf5 !important; }
+      .copy-confirmation { background: rgba(28,28,30,.88) !important; border-color: rgba(255,255,255,.14) !important; }
     }
 
     html, body {
@@ -232,6 +233,56 @@
     .btn-alt:active { transform: scale(.98); background: var(--ios-btn-press); }
     .btn-modal-primary { flex: 1; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 16px; background: var(--ios-blue); color: #fff; transition: background 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;}
     .btn-modal-primary:active { transform: scale(.98); }
+    .btn-modal-primary:disabled { opacity: .72; cursor: progress; }
+
+    .copy-confirmation {
+      position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+      transform: translate(-50%, 18px) scale(.96); z-index: 1200; pointer-events: none;
+      display: flex; align-items: center; gap: 10px; min-width: 178px; justify-content: center;
+      padding: 12px 16px; border-radius: 999px; color: #fff; font-size: 15px; font-weight: 800;
+      background: rgba(20,20,22,.84); border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 18px 48px rgba(0,0,0,.32), 0 1px 0 rgba(255,255,255,.18) inset;
+      backdrop-filter: blur(18px); opacity: 0; visibility: hidden;
+    }
+
+    .copy-confirmation.show {
+      visibility: visible;
+      animation: copyToastIn 1.8s cubic-bezier(.2,.9,.2,1) forwards;
+    }
+
+    .copy-confirmation-mark {
+      width: 24px; height: 24px; border-radius: 50%; background: #34c759;
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 6px rgba(52,199,89,.14);
+    }
+
+    .copy-confirmation-icon {
+      width: 14px; height: 14px; fill: none; stroke: #fff; stroke-width: 2.8;
+      stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 18; stroke-dashoffset: 18;
+    }
+
+    .copy-confirmation.show .copy-confirmation-icon {
+      animation: copyCheckDraw .42s .16s ease-out forwards;
+    }
+
+    @keyframes copyToastIn {
+      0% { opacity: 0; transform: translate(-50%, 18px) scale(.96); }
+      16% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
+    }
+
+    @keyframes copyCheckDraw {
+      to { stroke-dashoffset: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .copy-confirmation.show { animation: copyToastReduced 1.6s ease-out forwards; }
+      .copy-confirmation.show .copy-confirmation-icon { animation: none; stroke-dashoffset: 0; }
+      @keyframes copyToastReduced {
+        0%, 100% { opacity: 0; }
+        15%, 80% { opacity: 1; }
+      }
+    }
 
   </style>
 </head>
@@ -289,6 +340,15 @@
     </div>
   </div>
 
+  <div class="copy-confirmation" id="copy-confirmation" role="status" aria-live="polite" aria-atomic="true">
+    <span class="copy-confirmation-mark">
+      <svg class="copy-confirmation-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.4 8.3l3 3.1 6.2-6.8" />
+      </svg>
+    </span>
+    <span>Copied</span>
+  </div>
+
   <input type="file" id="file-upload-input" accept=".svg" class="hidden">
 
   <script>
@@ -324,11 +384,42 @@
       btnExportOptimized: document.getElementById('btn-export-optimized'),
       btnCloseExport: document.getElementById('btn-close-export'),
       btnSaveFile: document.getElementById('btn-save-file'),
-      btnCopyClipboard: document.getElementById('btn-copy-clipboard')
+      btnCopyClipboard: document.getElementById('btn-copy-clipboard'),
+      copyConfirmation: document.getElementById('copy-confirmation')
     };
 
     const openModal = (modal) => modal.classList.add('show');
     const closeModal = (modal) => modal.classList.remove('show');
+    let copyConfirmationTimer = null;
+
+    function showCopyConfirmation() {
+      clearTimeout(copyConfirmationTimer);
+      DOM.copyConfirmation.classList.remove('show');
+      void DOM.copyConfirmation.offsetWidth;
+      DOM.copyConfirmation.classList.add('show');
+      copyConfirmationTimer = setTimeout(() => {
+        DOM.copyConfirmation.classList.remove('show');
+      }, 1850);
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (e) {
+          // Fall through for local-file browsers that block the async Clipboard API.
+        }
+      }
+
+      DOM.exportTextarea.focus();
+      DOM.exportTextarea.select();
+      DOM.exportTextarea.setSelectionRange(0, text.length);
+
+      if (!document.execCommand || !document.execCommand('copy')) {
+        throw new Error('Clipboard copy failed');
+      }
+    }
 
     // Load/Reset Protocol Toggle
     DOM.btnOpenImport.addEventListener('click', () => {
@@ -816,18 +907,19 @@
     });
 
     // Hardware Clipboard Protocol
-    DOM.btnCopyClipboard.addEventListener('click', () => {
-      DOM.exportTextarea.select();
-      DOM.exportTextarea.setSelectionRange(0, 99999);
+    DOM.btnCopyClipboard.addEventListener('click', async () => {
+      const svgData = DOM.exportTextarea.value;
+      DOM.btnCopyClipboard.disabled = true;
 
-      navigator.clipboard.writeText(DOM.exportTextarea.value).then(() => {
-        DOM.btnCopyClipboard.textContent = 'COPIED!';
-        DOM.btnCopyClipboard.style.background = '#34c759';
-        setTimeout(() => {
-          DOM.btnCopyClipboard.textContent = 'Copy';
-          DOM.btnCopyClipboard.style.background = '';
-        }, 2000);
-      }).catch(() => alert('Clipboard access denied by WebKit security constraints.'));
+      try {
+        await copyTextToClipboard(svgData);
+        closeModal(DOM.exportModal);
+        showCopyConfirmation();
+      } catch (e) {
+        alert('Clipboard access denied by browser security constraints.');
+      } finally {
+        DOM.btnCopyClipboard.disabled = false;
+      }
     });
   </script>
 </body>
