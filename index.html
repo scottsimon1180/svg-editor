@@ -583,38 +583,177 @@
     function minifySvgString(svgString) {
       return svgString
         .replace(/>\s+</g, '><')
-        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+\/>/g, '/>')
         .trim();
     }
 
-    function generateExportPayload({ optimized }) {
-      if (!currentSvgNode) return null;
+    function serializeSvg(svgEl) {
+      const serializer = new XMLSerializer();
+      let payload = serializer.serializeToString(svgEl);
 
+      if (!payload.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+        payload = payload.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      return payload;
+    }
+
+    function generateRegularExportPayload() {
       const exportNode = currentSvgNode.cloneNode(true);
       pruneInvisibleGeometries(exportNode);
       computeTightViewBoxFromLiveNode(currentSvgNode, exportNode);
       ensureXmlns(exportNode);
 
-      if (!optimized) {
-        exportNode.setAttribute('width', '100%');
-        exportNode.setAttribute('height', '100%');
+      exportNode.setAttribute('width', '100%');
+      exportNode.setAttribute('height', '100%');
 
-        const serializer = new XMLSerializer();
-        let payload = serializer.serializeToString(exportNode);
+      return serializeSvg(exportNode);
+    }
 
-        if (!payload.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
-          payload = payload.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
-        }
-        return payload;
+    function parseSvgLength(value) {
+      const match = String(value || '').trim().match(/^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/i);
+      return match ? Number(match[0]) : null;
+    }
+
+    function formatSvgNumber(value) {
+      if (!Number.isFinite(value)) return '0';
+      const rounded = Math.round(value * 1000) / 1000;
+      return String(Object.is(rounded, -0) ? 0 : rounded);
+    }
+
+    function ensureResponsiveViewBox(exportNode, liveSvgNode) {
+      if ((exportNode.getAttribute('viewBox') || '').trim()) return;
+
+      const width = parseSvgLength(exportNode.getAttribute('width'));
+      const height = parseSvgLength(exportNode.getAttribute('height'));
+
+      if (width > 0 && height > 0) {
+        exportNode.setAttribute('viewBox', `0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}`);
+        return;
       }
 
+      try {
+        const bbox = liveSvgNode.getBBox();
+        if (bbox.width > 0 && bbox.height > 0) {
+          exportNode.setAttribute(
+            'viewBox',
+            `${formatSvgNumber(bbox.x)} ${formatSvgNumber(bbox.y)} ${formatSvgNumber(bbox.width)} ${formatSvgNumber(bbox.height)}`
+          );
+        }
+      } catch (e) {
+        // Leave the SVG unchanged if the browser cannot calculate bounds.
+      }
+    }
+
+    function cleanPaintValue(value) {
+      return String(value || '').trim().replace(/\s*!important\s*$/i, '').trim();
+    }
+
+    function paintHasImportantFlag(value) {
+      return /\s*!important\s*$/i.test(String(value || ''));
+    }
+
+    function currentColorPaintValue(value) {
+      return paintHasImportantFlag(value) ? 'currentColor!important' : 'currentColor';
+    }
+
+    function isCssControlledPaint(value) {
+      const paint = cleanPaintValue(value).toLowerCase();
+      return paint === 'currentcolor' || paint === 'inherit' || paint.startsWith('var(');
+    }
+
+    function isSolidPaint(value) {
+      const paint = cleanPaintValue(value);
+      const lower = paint.toLowerCase();
+
+      if (!paint || isCssControlledPaint(paint)) return false;
+      if (lower === 'none' || lower === 'transparent') return false;
+      if (lower.startsWith('url(') || lower.startsWith('context-')) return false;
+      return true;
+    }
+
+    function optimizeStyleAttribute(el, { removeRootSizing = false } = {}) {
+      const style = el.getAttribute('style');
+      if (!style) return;
+
+      const declarations = style.split(';').map(part => part.trim()).filter(Boolean);
+      const optimized = declarations.map(declaration => {
+        const colonIndex = declaration.indexOf(':');
+        if (colonIndex === -1) return declaration;
+
+        const property = declaration.slice(0, colonIndex).trim();
+        const value = declaration.slice(colonIndex + 1).trim();
+        const propertyLower = property.toLowerCase();
+
+        if (removeRootSizing && (propertyLower === 'width' || propertyLower === 'height')) {
+          return null;
+        }
+
+        if ((propertyLower === 'fill' || propertyLower === 'stroke') && isSolidPaint(value)) {
+          return `${property}:${currentColorPaintValue(value)}`;
+        }
+
+        return `${property}:${value}`;
+      }).filter(Boolean);
+
+      if (optimized.length > 0) {
+        el.setAttribute('style', optimized.join(';'));
+      } else {
+        el.removeAttribute('style');
+      }
+    }
+
+    function convertSolidPaintToCurrentColor(exportNode) {
+      const paintAttributes = ['fill', 'stroke'];
+      const elements = [exportNode, ...Array.from(exportNode.querySelectorAll('*'))];
+
+      if (!exportNode.hasAttribute('fill')) {
+        exportNode.setAttribute('fill', 'currentColor');
+      }
+
+      elements.forEach((el, index) => {
+        paintAttributes.forEach(attr => {
+          if (el.hasAttribute(attr) && isSolidPaint(el.getAttribute(attr))) {
+            el.setAttribute(attr, 'currentColor');
+          }
+        });
+
+        optimizeStyleAttribute(el, { removeRootSizing: index === 0 });
+      });
+    }
+
+    function optimizeEmbeddedStyleBlocks(exportNode) {
+      const styleNodes = Array.from(exportNode.querySelectorAll('style'));
+
+      styleNodes.forEach(styleNode => {
+        const optimizedCss = styleNode.textContent
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[;{])\s*(fill|stroke)\s*:\s*([^;{}]+)/gi, (match, prefix, property, value) => {
+            if (!isSolidPaint(value)) return `${prefix}${property}:${value.trim()}`;
+            return `${prefix}${property}:${currentColorPaintValue(value)}`;
+          })
+          .replace(/\s*([{}:;,>+~])\s*/g, '$1')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        styleNode.textContent = optimizedCss;
+      });
+    }
+
+    function stripRootSizingForResponsiveSvg(exportNode) {
       exportNode.removeAttribute('width');
       exportNode.removeAttribute('height');
       exportNode.removeAttribute('x');
       exportNode.removeAttribute('y');
+    }
 
+    function generateHtmlOptimizedExportPayload() {
+      const exportNode = currentSvgNode.cloneNode(true);
+      ensureXmlns(exportNode);
+      ensureResponsiveViewBox(exportNode, currentSvgNode);
+      stripRootSizingForResponsiveSvg(exportNode);
+      convertSolidPaintToCurrentColor(exportNode);
+      optimizeEmbeddedStyleBlocks(exportNode);
       removeComments(exportNode);
-      removeEmptyGroups(exportNode);
       stripRedundantOpacityAttrs(exportNode);
 
       if (exportNode.getAttribute('version')) exportNode.removeAttribute('version');
@@ -624,15 +763,13 @@
         exportNode.removeAttribute('xmlns:xlink');
       }
 
-      const serializer = new XMLSerializer();
-      let payload = serializer.serializeToString(exportNode);
+      return minifySvgString(serializeSvg(exportNode));
+    }
 
-      if (!payload.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
-        payload = payload.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
-      }
+    function generateExportPayload({ optimized }) {
+      if (!currentSvgNode) return null;
 
-      payload = minifySvgString(payload);
-      return payload;
+      return optimized ? generateHtmlOptimizedExportPayload() : generateRegularExportPayload();
     }
 
     function openExportModalWithPayload(payload, title) {
